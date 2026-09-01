@@ -1,43 +1,55 @@
 # Solved DayZ Bug Fixes
 
-This file stores known fixes.
+This file stores confirmed DayZ mod bugs and their solutions.
 
 ------------------------------------------------------------------------
 
 ## General Script Errors
 
-Cause: Wrong script placement or inheritance.
+### Cause
 
-Solution: Check correct script layer.
+Wrong script placement or inheritance.
+
+### Solution
+
+Check correct script layer:
+
+- 1_Core
+- 2_GameLib
+- 3_Game
+- 4_World
+- 5_Mission
 
 ------------------------------------------------------------------------
 
 ## Mod Loading Issues
 
-Cause: Incorrect config.cpp or dependencies.
+### Cause
 
-Solution: Verify:
+Incorrect config.cpp or missing dependencies.
 
--   requiredAddons
--   class names
--   folder structure
+### Solution
+
+Verify:
+
+- requiredAddons
+- class names
+- folder structure
+- dependencies
 
 ------------------------------------------------------------------------
 
 ## Multiplayer Problems
 
-Cause: Client executing server-only logic.
+### Cause
 
-Solution:
+Client executing server-only logic.
 
-Separate:
+### Solution
 
-Server: GetGame().IsServer()
+Separate execution:
 
-Client: GetGame().IsClient()
+Server:
 
-------------------------------------------------------------------------
-
-## Future Fixes
-
-Add every solved problem here.
+```c
+GetGame().IsServer()
