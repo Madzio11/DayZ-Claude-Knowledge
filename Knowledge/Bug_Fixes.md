@@ -7,16 +7,20 @@ This file stores confirmed DayZ mod bugs, root causes, fixes and verification st
 # General Script Errors
 
 ## Cause
+
 Wrong script placement, inheritance problems or incorrect class structure.
 
 ## Solution
+
 Always verify:
+
 - Correct DayZ script layer
 - Correct class inheritance
 - Correct vanilla override usage
 - Correct modded class implementation
 
 Required script layers:
+
 - 1_Core
 - 2_GameLib
 - 3_Game
@@ -28,10 +32,13 @@ Required script layers:
 # Mod Loading Issues
 
 ## Cause
+
 Incorrect config.cpp, missing dependencies or wrong folder structure.
 
 ## Solution
+
 Verify:
+
 - requiredAddons
 - class names
 - dependencies
@@ -43,17 +50,21 @@ Verify:
 # Multiplayer Problems
 
 ## Cause
+
 Client executing logic that should only run on server.
 
 ## Solution
 
 Server:
+
 GetGame().IsServer()
 
 Client:
+
 GetGame().IsClient()
 
 Dedicated server:
+
 GetGame().IsDedicatedServer()
 
 Server must remain authoritative.
@@ -62,69 +73,71 @@ Server must remain authoritative.
 
 # Confirmed Fixes
 
+------------------------------------------------------------------------
+
 # MD_CrateEvent Double Timer System
 
 ## Status
+
 Fixed
 
 ## Priority
-Critical (P0)
 
-## Affected Systems
-- MD_CrateEvent
-- MD_SpecialCrate
-- Timer system
-- Loot spawning
-- Notifications
-- NetSync countdown
+P0 Critical
 
 ## Problem
 
-The crate timer was controlled by two independent timer systems simultaneously.
+The crate timer was controlled by two independent systems:
 
-Both systems modified:
+- EOnPostSimulate()
+- MDCE_TimerTick()
+
+Both modified:
 
 m_RemainingTime
 
-Timer sources:
-
-1. EOnPostSimulate()
-2. MDCE_TimerTick()
-
-The same countdown variable was updated twice.
+causing the countdown to run twice.
 
 ## Symptoms
 
 - Crate opened approximately twice as fast.
-- 60 second timer could finish around 30 seconds.
+- 60 second timer finished around 30 seconds.
 - Possible duplicate loot spawning.
 - Duplicate notifications.
 - Multiple OnTimerComplete executions.
-- Possible race condition with key bypass.
 
 ## Root Cause
 
-ActivateCrate() started CallLater(MDCE_TimerTick) and also enabled POSTSIMULATE.
+ActivateCrate() started:
 
-Both systems executed:
+MDCE_TimerTick()
 
-m_RemainingTime -= value;
+and also enabled:
+
+EntityEvent.POSTSIMULATE
+
+Both systems decreased the same timer.
 
 ## Fix Applied
 
-Removed duplicate timer system.
+Removed EOnPostSimulate timer logic.
 
 Removed:
-- EOnPostSimulate() timer logic
-- EntityEvent.POSTSIMULATE dependency
+
+- SetEventMask(EntityEvent.POSTSIMULATE)
+- Duplicate countdown handling
 
 Kept:
+
 - MDCE_TimerTick() as the only timer source
 
 Added:
-- m_TimerCompleted protection to prevent duplicate completion.
 
-## Modified Files
+m_TimerCompleted
+
+guard to prevent duplicate completion.
+
+## Affected Files
 
 Scripts/4_World/MD_CrateEvent.c
 
@@ -133,46 +146,261 @@ Scripts/4_World/MD_SpecialCrate.c
 ## Verification
 
 Tested:
-- Server startup
-- Crate activation
-- Timer countdown
-- Loot spawning
-- Special crate activation
-- Key bypass protection
 
-Expected:
-- Timer duration matches configuration.
-- OnTimerComplete executes once.
-- Loot spawns once.
-- No duplicate notifications.
+- Normal crate
+- Special crate
+- Key bypass
+- Loot spawning
+- Timer completion
+
+Result:
+
+- Correct timer duration
+- Single completion
+- Single loot spawn
 
 ------------------------------------------------------------------------
 
-# Related Pending Issue
+# MD_CrateEvent CallQueue Cleanup After Despawn
 
-## SpecialCrate Timer Display Initial Sync
+## Status
 
-Status:
+Fixed
+
+## Priority
+
+P1
+
+## Problem
+
+Repeating CallQueue callbacks could remain registered after crate deletion until their own self-cancel.
+
+Affected:
+
+- CheckTimerProgress
+- MDCE_TimerTick
+
+## Symptoms
+
+Possible:
+
+- Callback execution after entity deletion
+- Old reminder notifications
+- Unnecessary server processing
+
+## Root Cause
+
+Cleanup depended only on self-cancel.
+
+## Fix Applied
+
+Added explicit cleanup in DoDespawn():
+
+- Remove(CheckTimerProgress)
+- Remove(MDCE_TimerTick)
+
+SpecialCrate required separate cleanup because DoDespawn() does not call super.
+
+## Affected Files
+
+Scripts/4_World/MD_CrateEvent.c
+
+Scripts/4_World/MD_SpecialCrate.c
+
+## Verification
+
+Tested:
+
+- Normal despawn
+- Special crate despawn
+- Respawn cycle
+- Multiple active crates
+
+------------------------------------------------------------------------
+
+# MD_SpecialCrate Event Key Consumed On Failed Bypass
+
+## Status
+
+Fixed
+
+## Priority
+
+P1
+
+## Problem
+
+Event Key was deleted even when bypass operation failed.
+
+## Root Cause
+
+Methods:
+
+- BypassTimerWithKey()
+- ActivateAndBypassWithKey()
+
+returned no success state.
+
+Actions always executed:
+
+key.Delete()
+
+## Fix Applied
+
+Changed methods to return bool.
+
+Success:
+
+true
+
+Failure:
+
+false
+
+Key is deleted only after successful operation.
+
+## Affected Files
+
+Scripts/4_World/MD_SpecialCrate.c
+
+Scripts/4_World/Classes/UserActionsComponent/Actions/Interact/ActionUseKeyOnCrate.c
+
+Scripts/4_World/Classes/UserActionsComponent/Actions/Interact/ActionActivateCrate.c
+
+## Verification
+
+Tested:
+
+- Normal bypass
+- Pre-activation bypass
+- Failed bypass
+- Both action paths
+
+Result:
+
+Failed operations no longer consume keys.
+
+------------------------------------------------------------------------
+
+# MD_CrateEvent Marker Identity Collision
+
+## Status
+
+Fixed
+
+## Priority
+
+P1
+
+## Problem
+
+Markers were identified using location.Name.
+
+Duplicate names caused conflicts.
+
+Example:
+
+Location 1:
+Name = Supply Crate
+
+Location 2:
+Name = Supply Crate
+
+One marker could overwrite another.
+
+## Root Cause
+
+Display name was used as internal identifier.
+
+Display names are not guaranteed unique.
+
+## Fix Applied
+
+Network structure preserved.
+
+Marker key changed from:
+
+Name
+
+to:
+
+ID|Name
+
+Server:
+
+- Sends unique location ID
+- Sends display name
+
+Client:
+
+- Matches using ID
+- Displays Name
+
+## Affected Files
+
+Scripts/3_Game/MD_CE_ClientMarker.c
+
+Scripts/4_World/MD_CE_RPC.c
+
+Scripts/4_World/MD_CrateEvent.c
+
+Scripts/4_World/MD_SpecialCrate.c
+
+Scripts/4_World/MD_CrateEventManager.c
+
+Scripts/4_World/MD_SpecialCrateConfig.c
+
+## Compatibility
+
+Preserved:
+
+- RPC structure
+- Marker states
+- Progress sync
+- Late join synchronization
+- LBmaster integration
+
+## Verification
+
+Tested:
+
+- Duplicate names
+- State changes
+- Despawn
+- Late joiners
+- Special crates
+- Multiple active markers
+
+------------------------------------------------------------------------
+
+# Pending Issues
+
+------------------------------------------------------------------------
+
+# SpecialCrate Timer Display Initial Sync
+
+## Status
+
 Pending
 
-Problem:
+## Problem
 
-After activating Special Crate, client timer display may temporarily show:
+After activation client may temporarily show:
 
 Unlocks in: 0
 
-until the first synchronization update arrives.
+until first synchronization.
 
-Root Cause:
+## Root Cause
 
-MD_SpecialCrate.ActivateCrate() does not immediately reset:
+ActivateCrate() does not immediately reset:
 
-m_RemainingSeconds
-m_SyncAccum
+- m_RemainingSeconds
+- m_SyncAccum
 
-Expected Fix:
+## Expected Fix
 
-Synchronize initial timer state immediately after activation.
+Synchronize initial timer state after activation.
 
 Do not change timer architecture.
 
@@ -183,128 +411,26 @@ Do not change timer architecture.
 ## Bug Name
 
 Status:
+
 Fixed / Pending
 
 Priority:
+
 P0 / P1 / P2
-
-Problem:
-
-Root Cause:
-
-Affected Files:
-
-Fix Applied:
-
-Verification:
-
-Lessons Learned:
-# MD_CrateEvent CallQueue Cleanup After Despawn
-
-## Status
-
-Fixed ✅
-
-## Priority
-
-P1
 
 ## Problem
 
-After crate despawn, some repeating CallQueue callbacks could remain registered until their next self-cancel cycle.
-
-Affected callbacks:
-
-- CheckTimerProgress
-- MDCE_TimerTick
-
-## Symptoms
-
-Possible delayed execution after entity deletion:
-
-- Timer callback running on deleted entity
-- Old reminder notifications
-- Unnecessary server processing
 
 ## Root Cause
 
-Cleanup depended only on self-cancel logic:
-
-- CheckTimerProgress removed itself after next execution
-- MDCE_TimerTick removed itself after next execution
-
-There was a time window after ObjectDelete() where callbacks still existed.
 
 ## Affected Files
 
-Scripts/4_World/MD_CrateEvent.c
-
-Scripts/4_World/MD_SpecialCrate.c
 
 ## Fix Applied
 
-Added explicit CallQueue cleanup inside DoDespawn():
-
-- Remove(CheckTimerProgress)
-- Remove(MDCE_TimerTick)
-
-SpecialCrate required its own cleanup because DoDespawn() does not call super.
 
 ## Verification
 
-Tested:
 
-- Normal crate despawn
-- Special crate despawn
-- Active timer despawn flow
-- Respawn cycle
-- Multiple active crates
-
-## Status
-
-Fixed ✅
-# MD_CrateEvent Marker Identity Collision
-
-## Status
-
-Fixed ✅
-
-## Priority
-
-P1
-
-## Problem
-
-Markers were identified internally by location.Name.
-
-If two crate locations used the same name:
-
-Example:
-
-Location 1:
-Name = Supply Crate
-
-Location 2:
-Name = Supply Crate
-
-The second marker could overwrite, update or remove the first marker.
-
-## Symptoms
-
-- Duplicate named locations conflict.
-- One marker disappears when another changes state.
-- Wrong marker state updates.
-- Late joiners may receive incorrect marker data.
-
-## Root Cause
-
-Marker matching used:
-
-Name
-
-instead of a unique location identifier.
-
-The network RPC transmitted only the display name.
-
-## Affected Files
-
+## Lessons Learned
