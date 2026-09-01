@@ -263,3 +263,48 @@ Tested:
 ## Status
 
 Fixed ✅
+# MD_CrateEvent Marker Identity Collision
+
+## Status
+
+Fixed ✅
+
+## Priority
+
+P1
+
+## Problem
+
+Markers were identified internally by location.Name.
+
+If two crate locations used the same name:
+
+Example:
+
+Location 1:
+Name = Supply Crate
+
+Location 2:
+Name = Supply Crate
+
+The second marker could overwrite, update or remove the first marker.
+
+## Symptoms
+
+- Duplicate named locations conflict.
+- One marker disappears when another changes state.
+- Wrong marker state updates.
+- Late joiners may receive incorrect marker data.
+
+## Root Cause
+
+Marker matching used:
+
+Name
+
+instead of a unique location identifier.
+
+The network RPC transmitted only the display name.
+
+## Affected Files
+
