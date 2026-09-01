@@ -199,3 +199,67 @@ Fix Applied:
 Verification:
 
 Lessons Learned:
+# MD_CrateEvent CallQueue Cleanup After Despawn
+
+## Status
+
+Fixed ✅
+
+## Priority
+
+P1
+
+## Problem
+
+After crate despawn, some repeating CallQueue callbacks could remain registered until their next self-cancel cycle.
+
+Affected callbacks:
+
+- CheckTimerProgress
+- MDCE_TimerTick
+
+## Symptoms
+
+Possible delayed execution after entity deletion:
+
+- Timer callback running on deleted entity
+- Old reminder notifications
+- Unnecessary server processing
+
+## Root Cause
+
+Cleanup depended only on self-cancel logic:
+
+- CheckTimerProgress removed itself after next execution
+- MDCE_TimerTick removed itself after next execution
+
+There was a time window after ObjectDelete() where callbacks still existed.
+
+## Affected Files
+
+Scripts/4_World/MD_CrateEvent.c
+
+Scripts/4_World/MD_SpecialCrate.c
+
+## Fix Applied
+
+Added explicit CallQueue cleanup inside DoDespawn():
+
+- Remove(CheckTimerProgress)
+- Remove(MDCE_TimerTick)
+
+SpecialCrate required its own cleanup because DoDespawn() does not call super.
+
+## Verification
+
+Tested:
+
+- Normal crate despawn
+- Special crate despawn
+- Active timer despawn flow
+- Respawn cycle
+- Multiple active crates
+
+## Status
+
+Fixed ✅
